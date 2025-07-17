@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Lost in Laminate zhCN Translation
 // @namespace    mailto:aboutmetal@sina.com
-// @version      1.0.0
+// @version      1.0.1
 // @description  Lost in Laminate 8.0 GPT 汉化 + 人工润色，by aboutmetal (zacmerkl)
 // @match        https://iconoclast.neocities.org/Lost%20in%20Laminate%208.0
 // @run-at       document-start
@@ -13,11 +13,15 @@
 // @grant        GM_deleteValue
 // @connect      raw.githubusercontent.com
 // @connect      localhost
-// @resource     translations  https://raw.githubusercontent.com/zacmerkl/lil-cn/main/LiL_cn.json
+// @updateURL    https://raw.githubusercontent.com/zacmerkl/lil-cn/main/Lost_in_Laminate_CN.user.js
+// @downloadURL  https://raw.githubusercontent.com/zacmerkl/lil-cn/main/Lost_in_Laminate_CN.user.js
+// @supportURL   https://github.com/zacmerkl/lil-cn/issues
+// @homepage     https://github.com/zacmerkl/lil-cn
+// @resource     translations_init  https://raw.githubusercontent.com/zacmerkl/lil-cn/main/LiL_cn.json
 // ==/UserScript==
 
 /* ------------------------------------------------------------------
- * 样式：黑底主题 + 中文排版增强
+ * 排版增强
  * ---------------------------------------------------------------- */
 GM_addStyle(`
   tw-story tw-passage {
@@ -50,37 +54,35 @@ GM_addStyle(`
 (function () {
   'use strict';
 
-  /* ----------------------------------------------------------------
-   * 配置区：根据需要修改
-   * ---------------------------------------------------------------- */
-  const REMOTE_URL      = 'https://raw.githubusercontent.com/zacmerkl/lil-cn/main/LiL_cn.json';
-  const CACHE_KEY_DICT  = 'LiL_CN_dict';   // 缓存译文JSON字符串
-  const CACHE_KEY_HASH  = 'LiL_CN_hash';   // 缓存哈希
-  const ASK_BEFORE_RELOAD = true;          // true: 发现新译文时弹窗询问; false: 无提示直接刷新
-  const REMOTE_TIMEOUT_MS = 15000;         // 远程请求超时
+  const REMOTE_URL        = 'https://raw.githubusercontent.com/zacmerkl/lil-cn/main/LiL_cn.json';
+  const CACHE_KEY_DICT    = 'LiL_CN_dict';
+  const CACHE_KEY_HASH    = 'LiL_CN_hash';
+  const ASK_BEFORE_RELOAD = true;
+  const REMOTE_TIMEOUT_MS = 15000;
 
-  /* ----------------------------------------------------------------
-   * 加载译文：优先缓存 -> @resource -> 空
-   * ---------------------------------------------------------------- */
   let dict = {};
-  let sourceTag = 'cache';
-
   try {
     const cachedStr = GM_getValue(CACHE_KEY_DICT, null);
     if (cachedStr) {
       dict = JSON.parse(cachedStr);
     } else {
-      sourceTag = 'resource';
-      dict = JSON.parse(GM_getResourceText('translations') || '{}');
+      const devStr = tryGetResource('translations_dev');
+      if (devStr) {
+        dict = JSON.parse(devStr);
+      } else {
+        dict = JSON.parse(tryGetResource('translations_init') || '{}');
+      }
     }
   } catch (e) {
     console.error('[LiL-CN] 译文加载失败:', e);
     dict = {};
   }
 
-  /* ----------------------------------------------------------------
-   * 翻译函数
-   * ---------------------------------------------------------------- */
+  function tryGetResource(name) {
+    try { return GM_getResourceText(name); }
+    catch (_) { return null; }
+  }
+
   function normalize(str) { return String(str).replace(/\r\n?/g, '\n'); }
 
   function translateOne(el) {
@@ -90,8 +92,7 @@ GM_addStyle(`
     const v = dict[name];
     if (v == null) return;         // 未翻译 -> 保留英文
     const cn = normalize(v);
-    // 全量覆盖，避免“拼接残留”
-    while (el.firstChild) el.removeChild(el.firstChild);
+    while (el.firstChild) el.removeChild(el.firstChild); // 全量清空
     el.appendChild(document.createTextNode(cn));
   }
 
@@ -99,9 +100,6 @@ GM_addStyle(`
     document.querySelectorAll('tw-passagedata[name]').forEach(translateOne);
   }
 
-  /* ----------------------------------------------------------------
-   * 全局 Mutation 监听：捕捉后续解析出的passage
-   * ---------------------------------------------------------------- */
   const mo = new MutationObserver(muts => {
     for (const mu of muts) {
       for (const n of mu.addedNodes) {
@@ -117,10 +115,7 @@ GM_addStyle(`
   });
   mo.observe(document.documentElement, { childList: true, subtree: true });
 
-  /* ----------------------------------------------------------------
-   * 多重兜底扫描：初始、DOMContentLoaded、load、短轮询
-   * ---------------------------------------------------------------- */
-  translateAllExisting();  // 初始
+  translateAllExisting();
   document.addEventListener('DOMContentLoaded', translateAllExisting, { once: true });
   window.addEventListener('load', translateAllExisting, { once: true });
 
@@ -131,12 +126,9 @@ GM_addStyle(`
     if (++pollCount >= pollMax) clearInterval(pollTimer);
   }, 100);
 
-  /* ----------------------------------------------------------------
-   * 后台检查GitHub远程版本 -> 缓存 -> 刷新
-   * ---------------------------------------------------------------- */
-  checkRemoteAndCache();
+  checkRemoteTranslations();
 
-  function checkRemoteAndCache() {
+  function checkRemoteTranslations() {
     GM_xmlhttpRequest({
       method: 'GET',
       url: REMOTE_URL + '?_=' + Date.now(),  // cache-bust
@@ -162,17 +154,13 @@ GM_addStyle(`
           GM_setValue(CACHE_KEY_DICT, txt);
           GM_setValue(CACHE_KEY_HASH, remoteHash);
 
-          // 刷新策略
           if (ASK_BEFORE_RELOAD) {
-            // 如果页面隐藏（后台标签），直接刷新；否则询问
             if (document.visibilityState === 'hidden' || confirm('发现新版中文译文，刷新以应用？')) {
               location.reload();
             }
           } else {
             location.reload();
           }
-        } else {
-          // console.log('[LiL-CN] 译文已是最新。');
         }
       },
       onerror: () => {
@@ -182,7 +170,7 @@ GM_addStyle(`
   }
 
   /* ----------------------------------------------------------------
-   * 简易哈希（32bit滚动，够用）：比较译文是否更新
+   * 简易哈希：用于判断译文是否更新
    * ---------------------------------------------------------------- */
   function simpleHash(str) {
     let h = 0;
