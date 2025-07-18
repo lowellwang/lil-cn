@@ -50,100 +50,75 @@ GM_addStyle(`
 
   /* -------- CONFIG -------- */
   const REMOTE_URL        = 'https://raw.githubusercontent.com/zacmerkl/lil-cn/main/LiL-10.0f-zhCN.json';
-  const CACHE_KEY_DICT    = 'LiL-10.0f-zhCN_dict';
-  const CACHE_KEY_HASH    = 'LiL-10.0f-zhCN_hash';
+  const CACHE_DICT_KEY    = 'LiL-10.0f-zhCN_dict';
+  const CACHE_ETAG_KEY    = 'LiL-10.0f-zhCN_hash';
   const ASK_BEFORE_RELOAD = true;
   const REMOTE_TIMEOUT_MS = 15000;
   /* ------------------------ */
 
-  /* ---------- 加载译文：缓存 → 本地 dev → 初始化快照 ---------- */
-  let dict = {};
-  try {
-    const cached = GM_getValue(CACHE_DICT_KEY, null);
-    if (cached) {
-      dict = JSON.parse(cached);
-    } else {
-      const dev = tryRes('translations_dev') || tryRes('translations_init') || '{}';
-      dict = JSON.parse(dev);
-    }
-  } catch (e) { console.error('[LiL-CN] 译文解析失败', e); dict = {}; }
+  /* ---------- 工具 ---------- */
+  const normalize = s => String(s).replace(/\r\n?/g, '\n');
+  const tryRes    = name => { try { return GM_getResourceText(name); } catch { return null; } };
 
-  function tryRes(name) { try { return GM_getResourceText(name); } catch { return null; } }
+  /* ---------- 加载译文 ---------- */
+  let dict = {};
+  try{
+    const cacheStr = GM_getValue(CACHE_DICT_KEY,null);
+    if(cacheStr){ dict=JSON.parse(cacheStr);}
+    else{
+      const dev = tryRes('translations_dev');
+      dict = dev ? JSON.parse(dev) : JSON.parse(tryRes('translations_init')||'{}');
+    }
+  }catch(e){console.error('[LiL-CN] 译文解析失败',e);}
 
   /* ---------- 翻译函数 ---------- */
-  const normalize = s => String(s).replace(/\r\n?/g, '\n');
+  function translateOne(el){
+    if(!el?.matches?.('tw-passagedata[name]'))return;
+    const cn = dict[el.getAttribute('name')];
+    if(cn==null)return;
+    while(el.firstChild)el.removeChild(el.firstChild);
+    el.appendChild(document.createTextNode(normalize(cn)));
+  }
+  const translateAll=()=>document.querySelectorAll('tw-passagedata[name]').forEach(translateOne);
 
-  const translateOne = el => {
-    if (!el?.matches?.('tw-passagedata[name]')) return;
-    const v = dict[el.getAttribute('name')];
-    if (v == null) return;
-    while (el.firstChild) el.removeChild(el.firstChild);
-    el.appendChild(document.createTextNode(normalize(v)));
-  };
+  /* ---------- 监听 & 初次翻译 ---------- */
+  new MutationObserver(m=>m.forEach(mu=>mu.addedNodes.forEach(translateOne)))
+    .observe(document.documentElement,{childList:true,subtree:true});
 
-  const translateAll = () => document.querySelectorAll('tw-passagedata[name]').forEach(translateOne);
-
-  /* ---------- MutationObserver 捕捉后续节点 ---------- */
-  new MutationObserver(muts => muts.forEach(mu => mu.addedNodes.forEach(translateOne)))
-    .observe(document.documentElement, { childList: true, subtree: true });
-
-  /* ---------- 多重兜底扫描 ---------- */
   translateAll();
-  document.addEventListener('DOMContentLoaded', translateAll, { once: true });
-  window.addEventListener('load', translateAll, { once: true });
-  let n = 0; const t = setInterval(() => { translateAll(); if (++n > 10) clearInterval(t); }, 100);
+  document.addEventListener('DOMContentLoaded',translateAll,{once:true});
+  window.addEventListener('load',translateAll,{once:true});
+  let k=0;const id=setInterval(()=>{translateAll();if(++k>10)clearInterval(id);},100);
 
-  /* ---------- 后台检查译文（If-None-Match / ETag） ---------- */
-  checkRemote();
-
-  function checkRemote() {
-    const cachedEtag = GM_getValue(CACHE_ETAG_KEY, null);
-    const headers = cachedEtag ? { 'If-None-Match': cachedEtag } : {};
-    GM_xmlhttpRequest({
-      method: 'GET',
-      url: REMOTE_URL,
-      headers,
-      timeout: REMOTE_TIMEOUT_MS,
-      anonymous: true,   // 减少 CORS preflight
-      onload: resp => {
-        // 304 = 无更新
-        if (resp.status === 304) return;
-
-        if (resp.status !== 200) {
-          console.warn('[LiL-CN] 远程译文请求失败', resp.status);
-          return;
-        }
-        const newEtag = getHeader(resp, 'etag');
-        const body = resp.responseText;
-        let remoteDict;
-        try {
-          remoteDict = JSON.parse(body);
-        } catch (e) {
-          console.warn('[LiL-CN] 远程JSON解析失败', e);
-          return;
-        }
-
-        // 写缓存
-        GM_setValue(CACHE_DICT_KEY, body);
-        if (newEtag) GM_setValue(CACHE_ETAG_KEY, newEtag);
-
-        console.log('[LiL-CN] 译文已更新，刷新以应用。');
-        if (ASK_BEFORE_RELOAD) {
-          if (document.visibilityState === 'hidden' || confirm('检测到新版中文译文，刷新以应用？')) {
-            location.reload();
-          }
-        } else {
+  /* ---------- 远程检查 (ETag) ---------- */
+  const etag = GM_getValue(CACHE_ETAG_KEY,null);
+  GM_xmlhttpRequest({
+    method:'GET',
+    url:REMOTE_URL,
+    timeout:REMOTE_TIMEOUT_MS,
+    headers: etag ? {'If-None-Match':etag} : {},
+    anonymous:true,
+    onload:r=>{
+      if(r.status===304) return;            // 无更新
+      if(r.status!==200){console.warn('[LiL-CN] 译文请求失败',r.status);return;}
+      const newEtag = getHeader(r,'etag');
+      const body=r.responseText;
+      try{
+        JSON.parse(body);  // 验证格式
+        GM_setValue(CACHE_DICT_KEY,body);
+        if(newEtag)GM_setValue(CACHE_ETAG_KEY,newEtag);
+        console.log('[LiL-CN] 译文已更新');
+        if(!ASK_BEFORE_RELOAD||document.visibilityState==='hidden'||confirm('发现新版译文，刷新应用？')){
           location.reload();
         }
-      },
-      onerror: () => console.warn('[LiL-CN] 远程译文请求错误')
-    });
-  }
+      }catch(e){console.warn('[LiL-CN] 远程译文解析失败',e);}
+    }
+  });
 
-  function getHeader(resp, key) {
-    if (typeof resp.getResponseHeader === 'function') return resp.getResponseHeader(key);
-    const match = resp.responseHeaders?.match(new RegExp(`^${key}:\\s*(.*)$`,`im`));
-    return match ? match[1].trim() : null;
+  function getHeader(resp,key){
+    if(typeof resp.getResponseHeader==='function') return resp.getResponseHeader(key);
+    const m=resp.responseHeaders?.match(new RegExp(`^${key}:\\s*(.*)$`,'im'));
+    return m?m[1].trim():null;
   }
 
 })();
