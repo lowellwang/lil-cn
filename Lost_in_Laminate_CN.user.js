@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Lost in Laminate zhCN Translation (10.0f)
 // @namespace    mailto:aboutmetal@sina.com
-// @version      1.1.0
-// @description  Lost in Laminate 8.0 GPT 汉化 + 人工润色，by aboutmetal (zacmerkl)
+// @version      1.1.1
+// @description  Lost in Laminate 10.0f GPT 汉化 + 人工润色，by aboutmetal (zacmerkl)
 // @match        https://iconoclast.neocities.org/Lost%20in%20Laminate%2010.0f/Lost%20in%20Laminate%2010.0f
 // @run-at       document-start
 // @grant        GM_getResourceText
@@ -53,82 +53,97 @@ GM_addStyle(`
 `);
 /* ------------------------ */
 
-(async function () {
+(function () {
   'use strict';
 
-  /* ------ load from cache / embedded resource ------ */
-  let translations = {};
+  /* ---------- 加载译文：缓存 → 本地 dev → 初始化快照 ---------- */
+  let dict = {};
   try {
-    const cached = GM_getValue(CACHE_KEY_DICT, null);
-    if (cached) translations = JSON.parse(cached);
-    else {
-      const embedded = GM_getResourceText('translations_init');
-      if (embedded) translations = JSON.parse(embedded);
+    const cached = GM_getValue(CACHE_DICT_KEY, null);
+    if (cached) {
+      dict = JSON.parse(cached);
+    } else {
+      const dev = tryRes('translations_dev') || tryRes('translations_init') || '{}';
+      dict = JSON.parse(dev);
     }
-  } catch (e) { console.error('[LiL‑CN] Initial translation load failed', e); }
+  } catch (e) { console.error('[LiL-CN] 译文解析失败', e); dict = {}; }
 
-  /* ------ apply to already present nodes ------ */
+  function tryRes(name) { try { return GM_getResourceText(name); } catch { return null; } }
+
+  /* ---------- 翻译函数 ---------- */
   const normalize = s => String(s).replace(/\r\n?/g, '\n');
-  const applyToNode = node => {
-    const name = node.getAttribute?.('name');
-    if (!name || !(name in translations)) return;
-    const newText = translations[name];
-    if (normalize(node.textContent) !== normalize(newText)) node.textContent = newText;
+
+  const translateOne = el => {
+    if (!el?.matches?.('tw-passagedata[name]')) return;
+    const v = dict[el.getAttribute('name')];
+    if (v == null) return;
+    while (el.firstChild) el.removeChild(el.firstChild);
+    el.appendChild(document.createTextNode(normalize(v)));
   };
-  const applyAll = () => document.querySelectorAll('tw-passagedata[name]')
-      .forEach(applyToNode);
 
-  /* apply early & observe */
-  applyAll();
-  const ob = new MutationObserver(muts => muts.forEach(mu => mu.addedNodes.forEach(applyToNode)));
-  ob.observe(document.documentElement, {childList:true, subtree:true});
-  window.addEventListener('load', applyAll, {once:true});
+  const translateAll = () => document.querySelectorAll('tw-passagedata[name]').forEach(translateOne);
 
-  /* ------ ETag‑based update ------ */
-  try {
-    const {json,newEtag} = await fetchWithETag(RAW_TRANSLATION_URL,
-      GM_getValue(CACHE_KEY_ETAG, ''));
-    if (json) {
-      const newDict = JSON.parse(json);
-      const changed = JSON.stringify(newDict) !== JSON.stringify(translations);
-      if (changed) {
-        GM_setValue(CACHE_KEY_DICT, json);
-        translations = newDict;
-        applyAll();
-        if (ASK_ON_UPDATE && document.readyState==='complete') {
-          if (confirm('检测到翻译更新，是否刷新页面应用？')) location.reload();
-        }
-      }
-      if (newEtag) GM_setValue(CACHE_KEY_ETAG, newEtag);
-    }
-  } catch (e) {
-    console.warn('[LiL‑CN] Translation update check failed:', e);
-  }
-})();
+  /* ---------- MutationObserver 捕捉后续节点 ---------- */
+  new MutationObserver(muts => muts.forEach(mu => mu.addedNodes.forEach(translateOne)))
+    .observe(document.documentElement, { childList: true, subtree: true });
 
-/* ===== helper: fetch with ETag ===== */
-function fetchWithETag(url, etag) {
-  return new Promise((resolve, reject) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+  /* ---------- 多重兜底扫描 ---------- */
+  translateAll();
+  document.addEventListener('DOMContentLoaded', translateAll, { once: true });
+  window.addEventListener('load', translateAll, { once: true });
+  let n = 0; const t = setInterval(() => { translateAll(); if (++n > 10) clearInterval(t); }, 100);
 
-    fetch(url, {
+  /* ---------- 后台检查译文（If-None-Match / ETag） ---------- */
+  checkRemote();
+
+  function checkRemote() {
+    const cachedEtag = GM_getValue(CACHE_ETAG_KEY, null);
+    const headers = cachedEtag ? { 'If-None-Match': cachedEtag } : {};
+    GM_xmlhttpRequest({
       method: 'GET',
-      cache: 'no-cache',
-      headers: etag ? {'If-None-Match': etag} : {},
-      signal: controller.signal
-    })
-    .then(async resp => {
-      clearTimeout(timer);
-      if (resp.status === 304) {
-        resolve({json: null, newEtag: etag}); // not modified
-      } else if (resp.ok) {
-        const txt = await resp.text();
-        resolve({json: txt, newEtag: resp.headers.get('etag') || ''});
-      } else {
-        reject(new Error('HTTP '+resp.status));
-      }
-    })
-    .catch(reject);
-  });
-}
+      url: REMOTE_URL,
+      headers,
+      timeout: REMOTE_TIMEOUT_MS,
+      anonymous: true,   // 减少 CORS preflight
+      onload: resp => {
+        // 304 = 无更新
+        if (resp.status === 304) return;
+
+        if (resp.status !== 200) {
+          console.warn('[LiL-CN] 远程译文请求失败', resp.status);
+          return;
+        }
+        const newEtag = getHeader(resp, 'etag');
+        const body = resp.responseText;
+        let remoteDict;
+        try {
+          remoteDict = JSON.parse(body);
+        } catch (e) {
+          console.warn('[LiL-CN] 远程JSON解析失败', e);
+          return;
+        }
+
+        // 写缓存
+        GM_setValue(CACHE_DICT_KEY, body);
+        if (newEtag) GM_setValue(CACHE_ETAG_KEY, newEtag);
+
+        console.log('[LiL-CN] 译文已更新，刷新以应用。');
+        if (ASK_BEFORE_RELOAD) {
+          if (document.visibilityState === 'hidden' || confirm('检测到新版中文译文，刷新以应用？')) {
+            location.reload();
+          }
+        } else {
+          location.reload();
+        }
+      },
+      onerror: () => console.warn('[LiL-CN] 远程译文请求错误')
+    });
+  }
+
+  function getHeader(resp, key) {
+    if (typeof resp.getResponseHeader === 'function') return resp.getResponseHeader(key);
+    const match = resp.responseHeaders?.match(new RegExp(`^${key}:\\s*(.*)$`,`im`));
+    return match ? match[1].trim() : null;
+  }
+
+})();
