@@ -15,7 +15,7 @@
 // @downloadURL  https://raw.githubusercontent.com/zacmerkl/lil-cn/main/Lost_in_Laminate_CN.user.js
 // @supportURL   https://github.com/zacmerkl/lil-cn/issues
 // @homepage     https://github.com/zacmerkl/lil-cn
-// @resource     translations_init  https://raw.githubusercontent.com/zacmerkl/lil-cn/main/LiL-10.0f-test.json
+// @resource     translations_init  https://raw.githubusercontent.com/zacmerkl/lil-cn/main/translations/LiL-10.0f-test.json
 // ==/UserScript==
 
 /* ------------------------------------------------------------------
@@ -52,7 +52,7 @@ GM_addStyle(`
 (function () {
   'use strict';
 
-  const REMOTE_URL        = 'https://raw.githubusercontent.com/zacmerkl/lil-cn/main/LiL-10.0f-test.json';
+  const REMOTE_URL        = 'https://raw.githubusercontent.com/zacmerkl/lil-cn/main/translations/LiL-10.0f-test.json';
   const CACHE_DICT_KEY    = 'LiL_CN_dict';
   const CACHE_ETAG_KEY    = 'LiL_CN_etag';
   const ASK_BEFORE_RELOAD = true;
