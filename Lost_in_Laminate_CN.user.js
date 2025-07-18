@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Lost in Laminate zhCN Translation
+// @name         Lost in Laminate zhCN Translation (10.0f)
 // @namespace    mailto:aboutmetal@sina.com
-// @version      1.0.1
+// @version      2.0-10.0f
 // @description  Lost in Laminate 8.0 GPT 汉化 + 人工润色，by aboutmetal (zacmerkl)
-// @match        https://iconoclast.neocities.org/Lost%20in%20Laminate%208.0
+// @match        https://iconoclast.neocities.org/Lost%20in%20Laminate%2010.0f/Lost%20in%20Laminate%2010.0f
 // @run-at       document-start
 // @grant        GM_getResourceText
 // @grant        GM_addStyle
@@ -17,7 +17,7 @@
 // @downloadURL  https://raw.githubusercontent.com/zacmerkl/lil-cn/main/Lost_in_Laminate_CN.user.js
 // @supportURL   https://github.com/zacmerkl/lil-cn/issues
 // @homepage     https://github.com/zacmerkl/lil-cn
-// @resource     translations_init  https://raw.githubusercontent.com/zacmerkl/lil-cn/main/LiL_cn.json
+// @resource     translations_init  https://raw.githubusercontent.com/zacmerkl/lil-cn/main/LiL-10.0f-zhCN.json
 // ==/UserScript==
 
 /* ------------------------------------------------------------------
@@ -46,17 +46,14 @@ GM_addStyle(`
     border-bottom: 1px dotted currentColor !important;
     padding: 0 1px !important;
   }
-  tw-align {
-        max-width: 65% !important;
-  }
 `);
 
 (function () {
   'use strict';
 
-  const REMOTE_URL        = 'https://raw.githubusercontent.com/zacmerkl/lil-cn/main/LiL_cn.json';
-  const CACHE_KEY_DICT    = 'LiL_CN_dict';
-  const CACHE_KEY_HASH    = 'LiL_CN_hash';
+  const REMOTE_URL        = 'https://raw.githubusercontent.com/zacmerkl/lil-cn/main/LiL-10.0f-zhCN.json';
+  const CACHE_KEY_DICT    = 'LiL-10.0f-zhCN_dict';
+  const CACHE_KEY_HASH    = 'LiL-10.0f-zhCN_hash';
   const ASK_BEFORE_RELOAD = true;
   const REMOTE_TIMEOUT_MS = 15000;
 
@@ -66,21 +63,12 @@ GM_addStyle(`
     if (cachedStr) {
       dict = JSON.parse(cachedStr);
     } else {
-      const devStr = tryGetResource('translations_dev');
-      if (devStr) {
-        dict = JSON.parse(devStr);
-      } else {
-        dict = JSON.parse(tryGetResource('translations_init') || '{}');
-      }
+      const initStr = GM_getResourceText('translations_init');
+      dict = initStr ? JSON.parse(initStr) : {};
     }
   } catch (e) {
-    console.error('[LiL-CN] 译文加载失败:', e);
+    console.error('[LiL‑CN] 本地翻译加载失败:', e);
     dict = {};
-  }
-
-  function tryGetResource(name) {
-    try { return GM_getResourceText(name); }
-    catch (_) { return null; }
   }
 
   function normalize(str) { return String(str).replace(/\r\n?/g, '\n'); }
@@ -89,11 +77,13 @@ GM_addStyle(`
     if (!el || el.nodeType !== 1) return;
     const name = el.getAttribute('name');
     if (!name) return;
-    const v = dict[name];
-    if (v == null) return;         // 未翻译 -> 保留英文
-    const cn = normalize(v);
-    while (el.firstChild) el.removeChild(el.firstChild); // 全量清空
-    el.appendChild(document.createTextNode(cn));
+    const cnEscaped = dict[name];
+    if (cnEscaped == null) return; // 没翻译
+    // Twine 读取 .textContent 时自动反转义实体
+    // 因此我们直接把 escaped 源写进去
+    if (normalize(el.textContent) !== normalize(cnEscaped)) {
+      el.textContent = cnEscaped;
+    }
   }
 
   function translateAllExisting() {
