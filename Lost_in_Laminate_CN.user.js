@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Lost in Laminate zhCN Translation (10.0f)
 // @namespace    mailto:aboutmetal@sina.com
-// @version      1.1.1
+// @version      1.1.2
 // @description  Lost in Laminate 10.0f GPT 汉化 + 人工润色，by aboutmetal (zacmerkl)
 // @match        https://iconoclast.neocities.org/Lost%20in%20Laminate%2010.0f/Lost%20in%20Laminate%2010.0f
 // @run-at       document-start
@@ -17,14 +17,6 @@
 // @homepage     https://github.com/zacmerkl/lil-cn
 // @resource     translations_init  https://raw.githubusercontent.com/zacmerkl/lil-cn/main/LiL-10.0f-zhCN.json
 // ==/UserScript==
-
-/* -------- CONFIG -------- */
-const REMOTE_URL        = 'https://raw.githubusercontent.com/zacmerkl/lil-cn/main/LiL-10.0f-zhCN.json';
-const CACHE_KEY_DICT    = 'LiL-10.0f-zhCN_dict';
-const CACHE_KEY_HASH    = 'LiL-10.0f-zhCN_hash';
-const ASK_BEFORE_RELOAD = true;
-const REMOTE_TIMEOUT_MS = 15000;
-/* ------------------------ */
 
 /* -------- 排版增强 ------- */
 GM_addStyle(`
@@ -55,6 +47,14 @@ GM_addStyle(`
 
 (function () {
   'use strict';
+
+  /* -------- CONFIG -------- */
+  const REMOTE_URL        = 'https://raw.githubusercontent.com/zacmerkl/lil-cn/main/LiL-10.0f-zhCN.json';
+  const CACHE_KEY_DICT    = 'LiL-10.0f-zhCN_dict';
+  const CACHE_KEY_HASH    = 'LiL-10.0f-zhCN_hash';
+  const ASK_BEFORE_RELOAD = true;
+  const REMOTE_TIMEOUT_MS = 15000;
+  /* ------------------------ */
 
   /* ---------- 加载译文：缓存 → 本地 dev → 初始化快照 ---------- */
   let dict = {};
